@@ -7,8 +7,12 @@ from config import MODEL, NUM_CTX, NUM_THREAD, MAX_STEPS
 from tools import REGISTRY, schemas, cut
 
 
-def compact(messages, keep=8):
-    """Старые результаты инструментов ужимаем, чтобы не забить контекст."""
+def compact(messages, keep=8, limit=14000):
+    """Ужимаем старые результаты инструментов, только когда история реально разрослась.
+    Если менять историю на каждом шаге, кэш промпта в Ollama сбрасывается."""
+    total = sum(len(m["content"]) for m in messages if isinstance(m, dict) and m.get("content"))
+    if total < limit:
+        return
     for m in messages[1:-keep]:
         if isinstance(m, dict) and m.get("role") == "tool" and len(m["content"]) > 300:
             m["content"] = m["content"][:300] + "...[сжато]"
@@ -20,7 +24,10 @@ def run(task, messages, console, approver):
         compact(messages)
         with console.status("[cyan]думаю...[/]"):
             resp = ollama.chat(model=MODEL, messages=messages, tools=schemas(), think=False,
-                               options={"num_ctx": NUM_CTX, "num_thread": NUM_THREAD, "temperature": 0.2})
+                               options={"num_ctx": NUM_CTX, "num_thread": NUM_THREAD,
+                                        "temperature": 0.2, "num_predict": 1024})
+        console.print(f"[dim]промпт {resp.prompt_eval_count} ток / {(resp.prompt_eval_duration or 0) / 1e9:.0f}с, "
+                      f"ответ {resp.eval_count} ток / {(resp.eval_duration or 0) / 1e9:.0f}с[/]")
         msg = resp.message
         messages.append(msg)
         if msg.content:
