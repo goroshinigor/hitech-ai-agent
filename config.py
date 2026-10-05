@@ -9,6 +9,7 @@ HEADLESS = os.getenv("AGENT_HEADLESS", "0") == "1"
 MAX_STEPS = 40
 MAX_OUT = 2000                                     # обрезка вывода инструментов
 
+SLOW_MO = int(os.getenv("AGENT_SLOWMO", "0")) 
 HOME = Path(os.getenv("AGENT_HOME", Path.home() / ".local-agent"))
 MEMORY_DIR = HOME / "memory"
 SKILLS_DIRS = [Path(__file__).parent / "skills", HOME / "skills", Path.cwd() / ".agent" / "skills"]

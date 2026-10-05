@@ -11,8 +11,8 @@ Rules:
 - Keep tool output small. After changes, verify them (run code/tests).
 - For tasks with 3+ steps, call load_skill('planning') first. After writing code, call load_skill('self-check').
 - Save durable facts about the user/project with memory_save.
-- Reply in the user's language. When finished, give a short summary."""
-
+- Reply in the user's language. When finished, give a short summary.
+- For web tasks use ONLY browser_* tools (browser_type fills a field, browser_click clicks). Never use grep/glob/bash on web pages."""
 
 def parse_skill(path: Path):
     text = path.read_text(encoding="utf-8")

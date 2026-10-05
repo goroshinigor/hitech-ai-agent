@@ -4,7 +4,7 @@ import platform
 import re
 import subprocess
 from pathlib import Path
-from config import MAX_OUT, MEMORY_DIR, HEADLESS
+from config import MAX_OUT, MEMORY_DIR, HEADLESS, SLOW_MO
 from context import find_skills, parse_skill
 
 REGISTRY = {}   # name -> (func, json-schema)
@@ -69,14 +69,21 @@ def glob(pattern):
     return cut("\n".join(res[:200]) or "no matches")
 
 
-@tool("Search file contents with a regex (like grep -rn).", pattern="regex", path="directory (optional, default .)")
+@tool("Search LOCAL project file contents with a regex (like grep -rn). NOT for web pages.", pattern="regex", path="directory inside the project (optional, default .)")
 def grep(pattern, path="."):
-    rx, out = re.compile(pattern), []
-    for root, dirs, files in os.walk(path):
+    root = Path(path).resolve()
+    if root == Path(root.anchor) or root == Path.home():
+        return "ERROR: path too broad. Search inside the project folder (path='.')."
+    rx, out, t0 = re.compile(pattern), [], time.time()
+    for r, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for f in files:
-            fp = os.path.join(root, f)
+            if time.time() - t0 > 15:
+                return cut("\n".join(out) + "\n[stopped: 15s limit]")
+            fp = os.path.join(r, f)
             try:
+                if os.path.getsize(fp) > 1_000_000:
+                    continue
                 for i, line in enumerate(open(fp, encoding="utf-8"), 1):
                     if rx.search(line):
                         out.append(f"{fp}:{i}:{line.strip()[:160]}")
@@ -85,7 +92,6 @@ def grep(pattern, path="."):
             if len(out) >= 100:
                 return cut("\n".join(out))
     return cut("\n".join(out) or "no matches")
-
 
 # ---------- терминал ----------
 @tool("Run a shell command and return its output (timeout 120s).", command="shell command")
@@ -114,7 +120,7 @@ def _page():
     if "page" not in _pw:
         from playwright.sync_api import sync_playwright
         _pw["p"] = sync_playwright().start()
-        _pw["b"] = _pw["p"].chromium.launch(headless=HEADLESS)
+        _pw["b"] = _pw["p"].chromium.launch(headless=HEADLESS, slow_mo=SLOW_MO)
         _pw["page"] = _pw["b"].new_page()
     return _pw["page"]
 
@@ -139,6 +145,23 @@ def browser_click(text):
     pg.wait_for_load_state("domcontentloaded")
     return cut(f"{pg.url}\n{pg.inner_text('body')}")
 
+@tool("Type text into an input field (find it by label, placeholder or CSS selector). Optionally press Enter.",
+      field="label, placeholder or CSS selector", text="text to type", submit="yes to press Enter afterwards (optional)")
+def browser_type(field, text, submit="no"):
+    pg = _page()
+    loc = None
+    for getter in (pg.get_by_label, pg.get_by_placeholder):
+        found = getter(field)
+        if found.count():
+            loc = found.first
+            break
+    if loc is None:
+        loc = pg.locator(field).first
+    loc.fill(text, timeout=10000)
+    if submit.lower() in ("yes", "true", "1"):
+        loc.press("Enter")
+        pg.wait_for_load_state("domcontentloaded")
+    return cut(f"{pg.url}\n{pg.inner_text('body')}")
 
 # ---------- память и скилы ----------
 @tool("Save a durable note to long-term memory (first line = short summary).", name="short slug", content="note text")
